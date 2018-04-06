@@ -3,6 +3,9 @@ name = "wasm-webgl-ecs"
 version = "0.1.0"
 authors = ["Robert Long <robert@robertlong.me>"]
 
+[profile.release]
+lto = true
+
 [lib]
 crate-type = ["cdylib"]
 

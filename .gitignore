@@ -1,0 +1,6 @@
+
+/target/
+**/*.rs.bk
+Cargo.lock
+node_modules/
+wasm_webgl_ecs_bg.wasm

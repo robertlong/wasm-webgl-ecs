@@ -9,6 +9,15 @@ use specs::prelude::*;
 
 #[wasm_bindgen]
 extern {
+    #[wasm_bindgen(js_namespace = canvasRenderer)]
+    fn clearCanvas();
+
+    #[wasm_bindgen(js_namespace = canvasRenderer)]
+    fn setFillColor(r: u8, g: u8, b: u8, a: f32);
+
+    #[wasm_bindgen(js_namespace = canvasRenderer)]
+    fn fillRect(x: i32, y: i32, width: i32, height: i32);
+
     #[wasm_bindgen(js_namespace = console)]
     fn log(a: &str);
 }
@@ -19,9 +28,6 @@ macro_rules! println {
 
 #[wasm_bindgen]
 pub struct Engine {
-    time: f32,
-    last_time: f32,
-    dt: f32,
     world: World,
     dispatcher: Dispatcher<'static, 'static>,
 }
@@ -31,47 +37,44 @@ impl Engine {
     pub fn new() -> Engine {
         let mut world = World::new();
 
-        world.register::<Pos>();
-        world.register::<Vel>();
+        world.register::<Pos2d>();
+        world.register::<Rect>();
+        world.register::<Color>();
 
-        // An entity may or may not contain some component.
+        world.add_resource(Time { time: 0.0, dt: 0.0 });
 
-        world.create_entity().with(Vel(2.0)).with(Pos(0.0)).build();
-        world.create_entity().with(Vel(4.0)).with(Pos(1.6)).build();
-        world.create_entity().with(Vel(1.5)).with(Pos(5.4)).build();
+        world.create_entity()
+            .with(Pos2d { x: 100, y: 0 })
+            .with(Rect { width: 100, height: 100 })
+            .with(Color{ r: 0, g: 0, b: 0, a: 1.0 })
+            .build();
 
-        // This entity does not have `Vel`, so it won't be dispatched.
-        world.create_entity().with(Pos(2.0)).build();
-
-        // This builds a dispatcher.
-        // The third parameter of `with` specifies
-        // logical dependencies on other systems.
-        // Since we only have one, we don't depend on anything.
-        // See the `full` example for dependencies.
-        let dispatcher = DispatcherBuilder::new().with(SysA, "sys_a", &[]).build();
+        let dispatcher = DispatcherBuilder::new()
+            .with(CanvasRenderer, "canvas_renderer", &[])
+            .with(TimeLogger, "time_logger", &[])
+            .build();
 
         Engine {
-            time: 0.0f32,
-            last_time: 0.0f32,
-            dt: 0.0f32,
             world: world,
             dispatcher: dispatcher,
         }
     }
 
     pub fn play(&mut self, time: f32) {
-        self.last_time = time;
+        let mut time_res = self.world.write_resource::<Time>();
+        time_res.dt = 0.0;
+        time_res.time = time;
     }
 
     pub fn update(&mut self, time: f32) {
-        // Update time related state
-        self.dt = time - self.time;
-        self.last_time = self.time;
-        self.time = time;
+        {
+            // Update time related state
+            let mut time_res = self.world.write_resource::<Time>();
+            time_res.dt = time - time_res.time;
+            time_res.time = time;
+        }
 
         self.dispatcher.dispatch(&mut self.world.res);
-
-        println!("{}", self.dt);
     }
 
     pub fn pause(&mut self) {
@@ -80,35 +83,65 @@ impl Engine {
 }
 
 #[derive(Debug)]
-struct Vel(f32);
+struct Time {
+    dt: f32,
+    time: f32,
+}
 
-impl Component for Vel {
+#[derive(Debug)]
+struct Pos2d {
+    x: i32,
+    y: i32
+}
+
+impl Component for Pos2d {
     type Storage = VecStorage<Self>;
 }
 
 #[derive(Debug)]
-struct Pos(f32);
+struct Rect {
+    width: i32,
+    height: i32
+}
 
-impl Component for Pos {
+impl Component for Rect {
     type Storage = VecStorage<Self>;
 }
 
-struct SysA;
+#[derive(Debug)]
+struct Color {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: f32,
+}
 
-impl<'a> System<'a> for SysA {
-    // These are the resources required for execution.
-    // You can also define a struct and `#[derive(SystemData)]`,
-    // see the `full` example.
-    type SystemData = (WriteStorage<'a, Pos>, ReadStorage<'a, Vel>);
+impl Component for Color {
+    type Storage = VecStorage<Self>;
+}
 
-    fn run(&mut self, (mut pos, vel): Self::SystemData) {
-        // The `.join()` combines multiple components,
-        // so we only access those entities which have
-        // both of them.
-        for (pos, vel) in (&mut pos, &vel).join() {
-            pos.0 += vel.0;
-            println!("{}", pos.0);
+struct CanvasRenderer;
+
+impl<'a> System<'a> for CanvasRenderer {
+    type SystemData = (ReadStorage<'a, Pos2d>, ReadStorage<'a, Rect>, ReadStorage<'a, Color>);
+
+    fn run(&mut self, (pos, rect, color): Self::SystemData) {
+        clearCanvas();
+
+        for (pos, rect, color) in (&pos, &rect, &color).join() {
+            setFillColor(color.r, color.g, color.b, color.a);
+            fillRect(pos.x, pos.y, rect.width, rect.height);
         }
+    }
+}
+
+struct TimeLogger;
+
+impl<'a> System<'a> for TimeLogger {
+    type SystemData = Fetch<'a, Time>;
+
+    fn run(&mut self, time: Self::SystemData) {
+        println!("time: {} dt: {}", time.time, time.dt);
     }
 }
 
